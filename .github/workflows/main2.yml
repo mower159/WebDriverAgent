@@ -1,0 +1,38 @@
+name: Build WDA for TrollStore
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest  # <--- ИСПРАВИЛ ТУТ (Было macos-13, стало macos-latest)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build WebDriverAgent
+        run: |
+          xcodebuild build-for-testing \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Create IPA
+        run: |
+          mkdir Payload
+          # Ищем приложение (на случай если в новом Xcode изменился путь)
+          find build/Build/Products -name "WebDriverAgentRunner-Runner.app" -exec cp -r {} Payload/ \;
+          # Пакуем
+          zip -r WDA_TrollStore.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v3
+        with:
+          name: WDA_IPA
+          path: WDA_TrollStore.ipa

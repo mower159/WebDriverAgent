@@ -1,0 +1,71 @@
+name: Build WDA v4.9.1 (Total Wipeout)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout v4.9.1
+        uses: actions/checkout@v4
+        with:
+          repository: appium/WebDriverAgent
+          ref: v4.9.1
+
+      - name: NUCLEAR PATCH (Fix Error 65)
+        run: |
+          # 1. СМЕНА ИМЕНИ (BUNDLE ID)
+          # Меняем com.facebook на com.mybuild везде, где найдем
+          find . -type f -name "*.pbxproj" -print0 | xargs -0 sed -i '' 's/com.facebook.WebDriverAgentRunner/com.mybuild.runner/g'
+          
+          # 2. УДАЛЕНИЕ КОМАНДЫ РАЗРАБОТЧИКА (Team ID)
+          # Ищем во всех файлах проекта и конфигах
+          find . -type f \( -name "*.pbxproj" -o -name "*.xcconfig" \) -print0 | xargs -0 sed -i '' 's/DevelopmentTeam = .*/DevelopmentTeam = "";/g'
+          
+          # 3. ОТКЛЮЧЕНИЕ ПОДПИСИ (Жестко)
+          find . -type f \( -name "*.pbxproj" -o -name "*.xcconfig" \) -print0 | xargs -0 sed -i '' 's/CODE_SIGNING_REQUIRED = YES/CODE_SIGNING_REQUIRED = NO/g'
+          find . -type f \( -name "*.pbxproj" -o -name "*.xcconfig" \) -print0 | xargs -0 sed -i '' 's/CODE_SIGNING_ALLOWED = YES/CODE_SIGNING_ALLOWED = NO/g'
+          
+          # 4. СБРОС СТИЛЯ ПОДПИСИ
+          find . -type f -name "*.pbxproj" -print0 | xargs -0 sed -i '' 's/ProvisioningStyle = Automatic;/ProvisioningStyle = Manual;/g'
+
+      - name: Build
+        run: |
+          # Собираем с флагом "generic/platform=iOS", чтобы не искать конкретное устройство
+          xcodebuild build-for-testing \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -destination 'generic/platform=iOS' \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Verify & Package
+        run: |
+          # Ищем результат
+          APP_PATH=$(find build/Build/Products -name "WebDriverAgentRunner-Runner.app" | head -n 1)
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::ОШИБКА: Файл не создан. Xcode победил..."
+            exit 1
+          fi
+          
+          echo "ПОБЕДА: Приложение собралось!"
+          mkdir Payload
+          cp -r "$APP_PATH" Payload/
+          
+          # Чистим атрибуты для TrollStore
+          xattr -cr Payload
+          
+          # Пакуем
+          zip -r WDA_TotalWipeout_v4.9.1.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: WDA_Fixed
+          path: WDA_TotalWipeout_v4.9.1.ipa

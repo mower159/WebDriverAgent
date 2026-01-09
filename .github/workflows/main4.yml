@@ -1,0 +1,46 @@
+name: Build WDA v4.9.1 Fixed
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout v4.9.1
+        uses: actions/checkout@v4
+        with:
+          repository: appium/WebDriverAgent
+          ref: v4.9.1  # <--- БЕРЕМ ИМЕННО СТАРУЮ ВЕРСИЮ!
+
+      - name: Build WebDriverAgent
+        run: |
+          xcodebuild build-for-testing \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            IPHONEOS_DEPLOYMENT_TARGET=15.0 \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Create Clean IPA
+        run: |
+          mkdir Payload
+          # Ищем приложение
+          find build/Build/Products -name "WebDriverAgentRunner-Runner.app" -exec cp -r {} Payload/ \;
+          
+          # УДАЛЯЕМ ПЛАГИНЫ, ЧТОБЫ TROLLSTORE НЕ РУГАЛСЯ
+          rm -rf Payload/WebDriverAgentRunner-Runner.app/PlugIns
+          
+          # Пакуем
+          zip -r WDA_4.9.1_NoPlugins.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: WDA_Fixed
+          path: WDA_4.9.1_NoPlugins.ipa

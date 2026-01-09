@@ -1,0 +1,65 @@
+name: Build WDA v4.9.1 (Nuclear Fix)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout v4.9.1
+        uses: actions/checkout@v4
+        with:
+          repository: appium/WebDriverAgent
+          ref: v4.9.1
+
+      - name: Nuke Signing Requirements
+        run: |
+          # 1. Удаляем ID команды разработчика
+          sed -i '' 's/DevelopmentTeam = .*/DevelopmentTeam = "";/g' WebDriverAgent.xcodeproj/project.pbxproj
+          
+          # 2. Меняем стиль подписи на Ручной (Manual), чтобы не искал профили
+          sed -i '' 's/ProvisioningStyle = Automatic;/ProvisioningStyle = Manual;/g' WebDriverAgent.xcodeproj/project.pbxproj
+          
+          # 3. Отключаем требование подписи
+          sed -i '' 's/CODE_SIGNING_REQUIRED = YES;/CODE_SIGNING_REQUIRED = NO;/g' WebDriverAgent.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGNING_ALLOWED = YES;/CODE_SIGNING_ALLOWED = NO;/g' WebDriverAgent.xcodeproj/project.pbxproj
+
+      - name: Build (Ignore Errors)
+        run: |
+          # Запускаем сборку для "generic" устройства (чтобы не искал конкретный айфон)
+          # Добавляем || true, чтобы скрипт не падал, если Xcode вернет ошибку 65 в самом конце (главное, чтобы App создался)
+          xcodebuild build \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -destination 'generic/platform=iOS' \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            || true
+
+      - name: Verify & Package
+        run: |
+          # Проверяем, создался ли файл, несмотря на ошибки
+          if [ -d "build/Build/Products/Release-iphoneos/WebDriverAgentRunner-Runner.app" ]; then
+            echo "SUCCESS: App found!"
+            mkdir Payload
+            cp -r build/Build/Products/Release-iphoneos/WebDriverAgentRunner-Runner.app Payload/
+            
+            # Стерилизуем файлы (чтобы TrollStore не ругался)
+            xattr -cr Payload
+            
+            # Пакуем
+            zip -r WDA_Nuclear_v4.9.1.ipa Payload
+          else
+            echo "ERROR: App was not created."
+            exit 1
+          fi
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: WDA_Nuclear
+          path: WDA_Nuclear_v4.9.1.ipa

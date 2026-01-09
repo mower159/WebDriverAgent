@@ -1,0 +1,65 @@
+name: Build WDA v4.9.1 (Safe Rename)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout v4.9.1
+        uses: actions/checkout@v4
+        with:
+          repository: appium/WebDriverAgent
+          ref: v4.9.1
+
+      - name: Rename Bundle ID (Safe Mode)
+        run: |
+          # 1. Меняем имя на "com.mybuild.wda"
+          # Это обманет Xcode, и он перестанет требовать лицензию Facebook
+          find . -type f -name "project.pbxproj" -print0 | xargs -0 sed -i '' 's/com.facebook.WebDriverAgentRunner/com.mybuild.wda/g'
+          
+          # 2. Убираем требование команды разработчика
+          sed -i '' 's/DevelopmentTeam = .*/DevelopmentTeam = "";/g' WebDriverAgent.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGNING_REQUIRED = YES/CODE_SIGNING_REQUIRED = NO/g' WebDriverAgent.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGNING_ALLOWED = YES/CODE_SIGNING_ALLOWED = NO/g' WebDriverAgent.xcodeproj/project.pbxproj
+
+      - name: Build
+        run: |
+          # Собираем
+          xcodebuild build \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -destination 'generic/platform=iOS' \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Verify & Package
+        run: |
+          # Ищем файл
+          APP_PATH=$(find build/Build/Products -name "WebDriverAgentRunner-Runner.app" | head -n 1)
+          
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::ОШИБКА: Файл не создан. Сборка не удалась."
+            exit 1
+          fi
+          
+          echo "УСПЕХ: Приложение найдено!"
+          mkdir Payload
+          cp -r "$APP_PATH" Payload/
+          
+          # Чистим атрибуты для TrollStore
+          xattr -cr Payload
+          
+          # Пакуем
+          zip -r WDA_Safe_v4.9.1.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: WDA_Safe
+          path: WDA_Safe_v4.9.1.ipa

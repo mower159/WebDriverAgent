@@ -1,0 +1,50 @@
+name: Build WDA v4.9.1 (No Signing Fix)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout v4.9.1
+        uses: actions/checkout@v4
+        with:
+          repository: appium/WebDriverAgent
+          ref: v4.9.1  # Используем стабильную версию для iOS 15
+
+      - name: Fix Signing (Brutal Force)
+        run: |
+          # Взламываем файл проекта: удаляем требование подписи и ID команды
+          sed -i '' 's/CODE_SIGNING_REQUIRED = YES/CODE_SIGNING_REQUIRED = NO/g' WebDriverAgent.xcodeproj/project.pbxproj
+          sed -i '' 's/CODE_SIGNING_ALLOWED = YES/CODE_SIGNING_ALLOWED = NO/g' WebDriverAgent.xcodeproj/project.pbxproj
+          sed -i '' 's/DevelopmentTeam = .*/DevelopmentTeam = "";/g' WebDriverAgent.xcodeproj/project.pbxproj
+
+      - name: Build WebDriverAgent
+        run: |
+          # Собираем без проверки подписи
+          xcodebuild build \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Create Valid IPA
+        run: |
+          mkdir Payload
+          # Копируем приложение ВМЕСТЕ С ПЛАГИНАМИ (Они нужны!)
+          find build/Build/Products/Release-iphoneos -name "WebDriverAgentRunner-Runner.app" -exec cp -r {} Payload/ \;
+          
+          # Пакуем в IPA
+          zip -r WDA_4.9.1_Full.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: WDA_Full
+          path: WDA_4.9.1_Full.ipa

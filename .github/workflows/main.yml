@@ -1,0 +1,38 @@
+name: Build WDA for TrollStore
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-13  # Используем старый macOS/Xcode, чтобы работало на iOS 15!
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build WebDriverAgent
+        run: |
+          xcodebuild build-for-testing \
+            -project WebDriverAgent.xcodeproj \
+            -scheme WebDriverAgentRunner \
+            -sdk iphoneos \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Create IPA
+        run: |
+          mkdir Payload
+          # Ищем, где собралось приложение
+          cp -r build/Build/Products/Release-iphoneos/WebDriverAgentRunner-Runner.app Payload/
+          # Пакуем в IPA
+          zip -r WDA_TrollStore.ipa Payload
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v3
+        with:
+          name: WDA_IPA
+          path: WDA_TrollStore.ipa
